@@ -1,60 +1,46 @@
-// Mobile nav toggle
-const toggle = document.querySelector(".nav-toggle");
-const links = document.querySelector(".nav-links");
-if (toggle) {
-  toggle.addEventListener("click", () => {
-    const open = links.classList.toggle("open");
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-  });
-}
+// Menú móvil
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const navMenu = document.getElementById('navMenu');
 
-// Smooth scroll for internal anchors
-document.querySelectorAll('a[href^="#"]').forEach((a) => {
-  a.addEventListener("click", (e) => {
-    const id = a.getAttribute("href");
-    if (id && id.startsWith("#") && id.length > 1) {
-      e.preventDefault();
-      document
-        .querySelector(id)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      links?.classList.remove("open");
-      toggle?.setAttribute("aria-expanded", "false");
-    }
-  });
-});
+        mobileMenuBtn.addEventListener('click', () => {
+            navMenu.classList.toggle('show');
+        });
 
-// Animate case study counters
-const counters = document.querySelectorAll(".stat .num");
-const once = new Set();
-const io = new IntersectionObserver(
-  (entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting && !once.has(entry.target)) {
-        once.add(entry.target);
-        const el = entry.target;
-        const end = parseInt(el.getAttribute("data-count"), 10) || 0;
-        const start = 0;
-        const dur = 1200;
-        const t0 = performance.now();
-        const tick = (t) => {
-          const p = Math.min(1, (t - t0) / dur);
-          el.textContent = Math.floor(start + (end - start) * p);
-          if (p < 1) requestAnimationFrame(tick);
+        // Animación al hacer scroll
+        const animateOnScroll = () => {
+            const elements = document.querySelectorAll('.step, .feature-card, .testimonial-card, .pricing-card');
+            
+            elements.forEach(element => {
+                const elementPosition = element.getBoundingClientRect().top;
+                const screenPosition = window.innerHeight / 1.2;
+                
+                if(elementPosition < screenPosition) {
+                    element.style.animationPlayState = 'running';
+                }
+            });
         };
-        requestAnimationFrame(tick);
-      }
-    });
-  },
-  { threshold: 0.5 }
-);
-counters.forEach((c) => io.observe(c));
 
-// Footer year
-document.getElementById("year").textContent = new Date().getFullYear();
+        window.addEventListener('scroll', animateOnScroll);
+        window.addEventListener('load', animateOnScroll);
 
-// Basic client-side form handler (demo only)
-document.getElementById("contactForm")?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  alert("Thanks! Your message has been sent. We’ll be in touch shortly.");
-  e.target.reset();
-});
+        // Smooth scrolling para enlaces
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                
+                const targetId = this.getAttribute('href');
+                if (targetId === '#') return;
+                
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                    
+                    // Cerrar menú móvil si está abierto
+                    if (navMenu.classList.contains('show')) {
+                        navMenu.classList.remove('show');
+                    }
+                }
+            });
+        });
