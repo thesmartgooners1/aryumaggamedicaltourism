@@ -128,16 +128,24 @@ as a bridge between patients and high-quality medical institutions.</p>
     </section>
     <!-- ___________video -->
     <section class="departments">
-        <h1 class="heading">video</h1>
-  
+       <div class="wrapper">
+  <video controls>
+    <source src="your-video.mp4" type="video/mp4">
+  </video>
+</div>
+
+<style>
+.wrapper {
+  display: flex;
+  justify-content: center;  /* horizontal */
+  align-items: center;      /* vertical */
+  height: 100vh;            /* full screen height */
+}
+
+video {
+  width: 500px;
+}
 </style>
-</head>
-<body>
-
-<video id="videoPlayer" controls>
-  <source src="your-video.mp4" type="video/mp4">
-</video>
-
     <!-- _______________footer -->
     <footer>
         <div class="footer-sec">
