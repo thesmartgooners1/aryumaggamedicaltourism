@@ -240,11 +240,8 @@ color: blue;
     color: #fff;
     cursor: pointer;
     transition: all 0.5s linear;
-    width: 220px;
-    height: 220px;
-    padding: 20px;
-    text-align: center;
 }
+
 /* __________footer */
 footer{
     background-color: #C21807;
