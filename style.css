@@ -240,6 +240,22 @@ color: blue;
     color: #fff;
     cursor: pointer;
     transition: all 0.5s linear;
+
+    .box3 {
+    width: 220px;
+    height: 220px;
+    padding: 20px;
+    text-align: center;
+}
+
+.logo {
+    width: 80px;
+    height: 80px;
+}
+
+.box3 h1 {
+    font-size: 22px;
+}
 }
 /* __________footer */
 footer{
@@ -372,13 +388,4 @@ footer{
         font-size: 12px;
     }
     .right p{
-
-
-        .box3 {
-    width: 200px;      /* change width */
-    height: 200px;     /* change height */
-    padding: 20px;
-}
         font-size: 14px;
-    }
-}
