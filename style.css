@@ -372,6 +372,13 @@ footer{
         font-size: 12px;
     }
     .right p{
+
+
+        .box3 {
+    width: 200px;      /* change width */
+    height: 200px;     /* change height */
+    padding: 20px;
+}
         font-size: 14px;
     }
 }
