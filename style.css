@@ -51,7 +51,7 @@
     display: block;
     margin: auto;
     transition: 0.5s;
-    background-color: #2e6476;
+    background-color: #C21807;
 }
 .navbar ul li:hover::after{
     width: 100%;
