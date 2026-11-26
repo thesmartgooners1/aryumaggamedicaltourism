@@ -2,27 +2,48 @@ const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 const INSTRUCTIONS = `
 You are the automated customer support assistant for Aryu Magga.
-Reply naturally and concisely. Greet customers back, answer their
-question directly, and use the conversation to understand follow-ups.
-Use plain text. In Burmese, refer to our team as ကျွန်မတို့.
+Respond naturally, professionally, and concisely in the requested language.
+Greet customers back and answer any question they included in the greeting.
+Use the conversation to understand follow-up questions.
 
-Aryu Magga is based in Yangon and helps coordinate medical appointments,
-dental appointments, health check-ups, and travel arrangements.
-Customers can browse the hospital and clinic directory on the website.
-Staff can help check availability, request quotes, or change bookings.
-For appointment inquiries, suggest sharing the requested service,
-preferred city or hospital, and preferred dates directly with staff.
+Refer to the company as "Aryu Magga" or "the Aryu Magga team" in English.
+In Burmese, use "Aryu Magga" or "Aryu Magga အဖွဲ့".
+Do not use "ကျွန်မတို့" or "ကျွန်တော်တို့". Keep English replies in English.
 
-Emergency requests come first. If the customer is in Thailand, tell them
-to call 1669 for an ambulance or 191 for a police emergency. If their
-location is unknown, say "If you're in Thailand" before giving the Thai
-numbers. Outside Thailand, tell them to call their local emergency
-number. Tell them to call now if there is an active emergency.
-Do not direct emergency callers to WhatsApp or Facebook.
+Emergency questions take priority. For an active emergency, tell the
+customer to call now. In Thailand, call 1669 for an ambulance or 191
+for a police emergency. If the customer's location is unknown, say
+"If you're in Thailand" before giving those numbers. Outside Thailand,
+tell the customer to call their local emergency number. Do not direct
+emergency callers to WhatsApp or Facebook.
 
-Refer medical advice to a qualified clinician. Do not invent prices,
-availability, booking confirmations, phone numbers, or links.
-Do not ask for medical records, payment details, or personal identifiers.
+When someone asks how to contact Aryu Magga, how to reach staff, or asks
+for WhatsApp or Facebook, give the contact details first.
+The verified Aryu Magga WhatsApp number is +95 9 788 788 775.
+Customers can also message Aryu Magga on Facebook. The website displays
+clickable contact buttons below the reply.
+For a contact-only question, answer in one or two sentences.
+Do not add booking instructions unless the customer also asks how to book.
+
+Example English reply:
+You can reach Aryu Magga on WhatsApp at +95 9 788 788 775 or message the Aryu Magga team on Facebook.
+
+Example Burmese reply:
+Aryu Magga အဖွဲ့ကို WhatsApp နံပါတ် +95 9 788 788 775 သို့မဟုတ် Facebook ကနေ ဆက်သွယ်နိုင်ပါတယ်ရှင့်။
+
+Aryu Magga is based in Yangon and helps coordinate medical and dental
+appointments, health check-ups, and travel arrangements. Customers can
+browse the hospital and clinic directory on the website. The Aryu Magga
+team can help check availability, request quotes, and review booking changes.
+For booking inquiries, suggest sharing the requested service, preferred city
+or hospital, and preferred dates directly with the Aryu Magga team.
+
+Refer clinical questions to a qualified clinician. Do not give diagnoses or
+treatment advice. Do not invent prices, availability, confirmed bookings,
+partnerships, phone numbers, or links. Do not ask for personal identifiers,
+medical records, or payment details.
+
+Write plain text. The website adds contact links separately.
 `;
 
 export default async function handler(req, res) {
@@ -38,22 +59,26 @@ export default async function handler(req, res) {
     }
 
     const { messages, language } = req.body ?? {};
-    const valid =
+
+    const validConversation =
         ['en', 'my'].includes(language) &&
         Array.isArray(messages) &&
         messages.length >= 1 &&
         messages.length <= 7 &&
         messages.length % 2 === 1 &&
         messages.every((entry, index) => {
-            const visitor = index % 2 === 0;
+            const isVisitor = index % 2 === 0;
+            const expectedRole = isVisitor ? 'user' : 'model';
+            const maxLength = isVisitor ? 500 : 1500;
+
             return entry &&
-                entry.role === (visitor ? 'user' : 'model') &&
+                entry.role === expectedRole &&
                 typeof entry.text === 'string' &&
                 entry.text.trim().length > 0 &&
-                entry.text.length <= (visitor ? 500 : 1500);
+                entry.text.length <= maxLength;
         });
 
-    if (!valid) {
+    if (!validConversation) {
         return res.status(400).json({ error: 'Invalid conversation.' });
     }
 
@@ -65,10 +90,11 @@ export default async function handler(req, res) {
         return res.status(503).json({ error: 'AI chat is unavailable.' });
     }
 
-    try {
-        const endpoint =
-            `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
+    const endpoint =
+        `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
+    const replyLanguage = language === 'my' ? 'Burmese' : 'English';
 
+    try {
         const upstream = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -83,7 +109,7 @@ export default async function handler(req, res) {
                 messages: [
                     {
                         role: 'system',
-                        content: `${INSTRUCTIONS}\nReply in ${language === 'my' ? 'Burmese' : 'English'}.`
+                        content: `${INSTRUCTIONS}\nReply in ${replyLanguage}.`
                     },
                     ...messages.map(({ role, text }) => ({
                         role: role === 'model' ? 'assistant' : 'user',
@@ -99,20 +125,25 @@ export default async function handler(req, res) {
         }
 
         const result = await upstream.json();
-        const reply = result.choices?.[0]?.message?.content;
+        const content = result.choices?.[0]?.message?.content;
 
-        if (typeof reply !== 'string' || !reply.trim()) {
+        if (typeof content !== 'string' || !content.trim()) {
             console.error('Aryu Magga chat: Cloudflare returned no reply text.');
             return res.status(502).json({ error: 'No AI reply was generated.' });
         }
 
-        return res.status(200).json({ reply: reply.trim().slice(0, 1500) });
-    } catch (error) {
-        console.error(
-            error?.name === 'TimeoutError'
-                ? 'Aryu Magga chat: Cloudflare request timed out.'
-                : 'Aryu Magga chat: Cloudflare request failed.'
+        // Keep the company name consistent if the model uses a Burmese pronoun.
+        const reply = content.trim().replace(
+            /(?:ကျွန်မတို့|ကျွန်တော်တို့)(?:\s*အဖွဲ့)?/gu,
+            language === 'my' ? 'Aryu Magga အဖွဲ့' : 'the Aryu Magga team'
         );
+
+        return res.status(200).json({ reply: reply.slice(0, 1500) });
+    } catch (error) {
+        const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+        console.error(timedOut
+            ? 'Aryu Magga chat: Cloudflare request timed out.'
+            : 'Aryu Magga chat: Cloudflare request failed.');
         return res.status(503).json({ error: 'AI chat is unavailable.' });
     }
 }
