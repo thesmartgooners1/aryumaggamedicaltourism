@@ -1,311 +1,149 @@
-const menu = document.querySelector('.menu-toggle');
-const navigation = document.querySelector('#site-nav');
+const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
-if (menu && navigation) {
-    menu.hidden = false;
+const INSTRUCTIONS = `
+You are the automated customer support assistant for Aryu Magga.
+Respond naturally, professionally, and concisely in the requested language.
+Greet customers back and answer any question they included in the greeting.
+Use the conversation to understand follow-up questions.
 
-    function closeMenu() {
-        menu.setAttribute('aria-expanded', 'false');
+Refer to the company as "Aryu Magga" or "the Aryu Magga team" in English.
+In Burmese, use "Aryu Magga" or "Aryu Magga အဖွဲ့".
+Do not use "ကျွန်မတို့" or "ကျွန်တော်တို့". Keep English replies in English.
+
+Emergency questions take priority. For an active emergency, tell the
+customer to call now. In Thailand, call 1669 for an ambulance or 191
+for a police emergency. If the customer's location is unknown, say
+"If you're in Thailand" before giving those numbers. Outside Thailand,
+tell the customer to call their local emergency number. Do not direct
+emergency callers to WhatsApp or Facebook.
+
+When someone asks how to contact Aryu Magga, how to reach staff, or asks
+for WhatsApp or Facebook, give the contact details first.
+The verified Aryu Magga WhatsApp number is +95 9 788 788 775.
+Customers can also message Aryu Magga on Facebook. The website displays
+clickable contact buttons below the reply.
+For a contact-only question, answer in one or two sentences.
+Do not add booking instructions unless the customer also asks how to book.
+
+Example English reply:
+You can reach Aryu Magga on WhatsApp at +95 9 788 788 775 or message the Aryu Magga team on Facebook.
+
+Example Burmese reply:
+Aryu Magga အဖွဲ့ကို WhatsApp နံပါတ် +95 9 788 788 775 သို့မဟုတ် Facebook ကနေ ဆက်သွယ်နိုင်ပါတယ်ရှင့်။
+
+Aryu Magga is based in Yangon and helps coordinate medical and dental
+appointments, health check-ups, and travel arrangements. Customers can
+browse the hospital and clinic directory on the website. The Aryu Magga
+team can help check availability, request quotes, and review booking changes.
+For booking inquiries, suggest sharing the requested service, preferred city
+or hospital, and preferred dates directly with the Aryu Magga team.
+
+Refer clinical questions to a qualified clinician. Do not give diagnoses or
+treatment advice. Do not invent prices, availability, confirmed bookings,
+partnerships, phone numbers, or links. Do not ask for personal identifiers,
+medical records, or payment details.
+
+Write plain text. The website adds contact links separately.
+`;
+
+export default async function handler(req, res) {
+    res.setHeader('Cache-Control', 'no-store');
+
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return res.status(405).json({ error: 'Method not allowed.' });
     }
 
-    menu.addEventListener('click', () => {
-        const expanded = menu.getAttribute('aria-expanded') === 'true';
-        menu.setAttribute('aria-expanded', String(!expanded));
-    });
-
-    navigation.addEventListener('click', (event) => {
-        if (event.target.closest('a')) closeMenu();
-    });
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && menu.getAttribute('aria-expanded') === 'true') {
-            closeMenu();
-            menu.focus();
-        }
-    });
-}
-
-const videoLink = document.querySelector('#video-link');
-const videoDialog = document.querySelector('#video-dialog');
-
-if (videoLink && typeof videoDialog?.showModal === 'function') {
-    videoLink.addEventListener('click', (event) => {
-        if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-        event.preventDefault();
-        videoDialog.showModal();
-    });
-
-    videoDialog.addEventListener('close', () => {
-        videoDialog.querySelector('video')?.pause();
-        videoLink.focus();
-    });
-}
-
-const hospitalSearch = document.querySelector('#hospital-search');
-const hospitalResults = document.querySelector('.hospital-results');
-const hospitalCards = document.querySelectorAll('.hospital-grid li');
-
-if (hospitalSearch && hospitalResults) {
-    function filterHospitals() {
-        const query = hospitalSearch.value.trim().toLowerCase();
-        let matches = 0;
-
-        for (const card of hospitalCards) {
-            card.hidden = !card.textContent.toLowerCase().includes(query);
-            if (!card.hidden) matches += 1;
-        }
-
-        hospitalResults.textContent = matches === 0
-            ? 'No hospitals or clinics match your search.'
-            : `${matches} ${matches === 1 ? 'listing' : 'listings'}`;
+    if (!req.headers['content-type']?.startsWith('application/json')) {
+        return res.status(415).json({ error: 'Expected JSON.' });
     }
 
-    hospitalSearch.addEventListener('input', filterHospitals);
-    filterHospitals();
-    hospitalSearch.closest('.hospital-search')?.removeAttribute('hidden');
-}
+    const { messages, language } = req.body ?? {};
 
-const chat = document.querySelector('.support-chat');
-const form = chat?.querySelector('.support-form');
-const input = form?.elements.namedItem('message');
-const sendButton = form?.querySelector('button[type="submit"]');
-const log = chat?.querySelector('.support-log');
+    const validConversation =
+        ['en', 'my'].includes(language) &&
+        Array.isArray(messages) &&
+        messages.length >= 1 &&
+        messages.length <= 7 &&
+        messages.length % 2 === 1 &&
+        messages.every((entry, index) => {
+            const isVisitor = index % 2 === 0;
+            const expectedRole = isVisitor ? 'user' : 'model';
+            const maxLength = isVisitor ? 500 : 1500;
 
-if (chat && form && input && sendButton && log) {
-    const launcher = chat.querySelector('summary');
-    const closeButton = chat.querySelector('.support-close');
-    const contacts = chat.querySelector('.support-actions');
-    const topics = chat.querySelector('.support-topics');
-    const topicButtons = topics?.querySelectorAll('button') ?? [];
-    const aiOption = chat.querySelector('.support-ai');
-    const aiEnabled = aiOption?.querySelector('input[type="checkbox"]');
+            return entry &&
+                entry.role === expectedRole &&
+                typeof entry.text === 'string' &&
+                entry.text.trim().length > 0 &&
+                entry.text.length <= maxLength;
+        });
 
-    const emergencyPattern =
-        /\b(?:emergenc(?:y|ies)|ambulance|not breathing|cannot breathe|can['’]t breathe|unconscious|severe bleeding)\b|အရေးပေါ်|လူနာတင်ယာဉ်|အသက်ရှူမရ|သတိလစ်|ฉุกเฉิน|รถพยาบาล/iu;
-
-    const privateDetailsPattern =
-        /[\w.+-]+@[\w.-]+\.[a-z]{2,}|(?:\d[\s-]*){7,}|passport|medical record|date of birth|ဆေးမှတ်တမ်း|နိုင်ငံကူးလက်မှတ်/iu;
-
-    const emergencyText = {
-        en: 'If this is an emergency, call now. In Thailand, call 1669 for an ambulance or 191 for a police emergency. Outside Thailand, call your local emergency number.',
-        my: 'အရေးပေါ်ဖြစ်နေရင် ချက်ချင်း ဖုန်းခေါ်ပါ။ ထိုင်းနိုင်ငံမှာ လူနာတင်ယာဉ်အတွက် 1669၊ ရဲအရေးပေါ်အတွက် 191 ကို ခေါ်ပါ။ ထိုင်းနိုင်ငံပြင်ပမှာ ဒေသခံ အရေးပေါ်ဖုန်းနံပါတ်ကို ခေါ်ပါ။'
-    };
-
-    const aiNotice = {
-        en: 'This answer was generated by Cloud AI and may contain errors. For detailed guidance, please consult the Aryu Magga Team directly.',
-        my: 'ဤအဖြေကို Cloud AI မှ ဖြေကြားထားပြီး မှားယွင်းနိုင်ပါသည်။ အသေးစိတ် သိရှိလိုပါက Aryu Magga Team နှင့် တိုက်ရိုက် ဆက်သွယ်တိုင်ပင်ပါ။'
-    };
-
-    const fallbackTopics = [
-        {
-            match: /symptoms?|diagnos|medication|dosage|side effects?|ရောဂါ|ဆေးသောက်/iu,
-            en: 'A qualified clinician can answer medical questions. The Aryu Magga Team can help arrange a consultation.',
-            my: 'ဆေးဘက်ဆိုင်ရာ မေးခွန်းတွေကို ဆရာဝန်နဲ့ တိုင်ပင်ပေးပါ။ ပြသဖို့ ရက်ချိန်းယူရာမှာ Aryu Magga Team က ကူညီပေးနိုင်ပါတယ်။'
-        },
-        {
-            match: /reschedule|cancel|change.*appointment|booking status|ရက်ပြောင်း|ဖျက်သိမ်း/iu,
-            en: 'Contact the Aryu Magga Team to check or change an existing booking.',
-            my: 'ယူထားတဲ့ ရက်ချိန်းကို စစ်ဆေးဖို့ ဒါမှမဟုတ် ပြောင်းဖို့ Aryu Magga Team ကို ဆက်သွယ်ပေးပါ။'
-        },
-        {
-            match: /prices?|costs?|fees?|quotes?|how much|ကုန်ကျ|ဈေး|စျေး/iu,
-            en: 'Prices vary by hospital and service. Tell the Aryu Magga Team which service you’re interested in so they can help request a current quote.',
-            my: 'ဈေးနှုန်းက ဆေးရုံနဲ့ ဝန်ဆောင်မှုအပေါ် မူတည်ပါတယ်။ လိုချင်တဲ့ ဝန်ဆောင်မှုကို Aryu Magga Team ဆီ ပြောပြပေးရင် လက်ရှိဈေးနှုန်းကို မေးမြန်းပေးနိုင်ပါတယ်။'
-        },
-        {
-            match: /book|appointment|check[ -]?up|consultation|ရက်ချိန်း|ကျန်းမာရေးစစ်/iu,
-            en: 'To arrange an appointment, tell the Aryu Magga Team which service you need, your preferred hospital or city, and dates that work for you.',
-            my: 'ရက်ချိန်းယူဖို့ လိုချင်တဲ့ ဝန်ဆောင်မှု၊ ဆေးရုံ ဒါမှမဟုတ် မြို့နဲ့ အဆင်ပြေမယ့် ရက်တွေကို Aryu Magga Team ဆီ ပြောပြပေးပါ။'
-        },
-        {
-            match: /hospitals?|clinics?|phyathai|medpark|kdms|masterpiece|dermaster|ruamjairak|ဆေးရုံ|ဆေးခန်း/iu,
-            en: 'You can browse the Hospitals and clinics section of the website. The Aryu Magga Team can help narrow down the options.',
-            my: 'ဝက်ဘ်ဆိုက်မှာ ဆေးရုံနဲ့ ဆေးခန်းစာရင်းကို ကြည့်နိုင်ပါတယ်။ ရွေးချယ်ဖို့ Aryu Magga Team က ကူညီပေးနိုင်ပါတယ်။'
-        },
-        {
-            match: /travel|hotel|airport|flights?|transport|ခရီး|ဟိုတယ်|လေဆိပ်/iu,
-            en: 'The Aryu Magga Team can help plan travel around your appointment. Tell the team your destination, travel dates, and what arrangements you need.',
-            my: 'ရက်ချိန်းနဲ့ ကိုက်ညီအောင် ခရီးစဉ်စီစဉ်ရာမှာ Aryu Magga Team က ကူညီပေးနိုင်ပါတယ်။ သွားမယ့်မြို့၊ ခရီးရက်နဲ့ လိုအပ်တာတွေကို ပြောပြပေးပါ။'
-        }
-    ];
-
-    const contactText = {
-        en: 'You can reach the Aryu Magga Team on WhatsApp at +95 9 788 788 775 or use the Facebook button below.',
-        my: 'Aryu Magga Team ကို WhatsApp နံပါတ် +95 9 788 788 775 သို့မဟုတ် အောက်က Facebook ခလုတ်ကနေ ဆက်သွယ်နိုင်ပါတယ်။'
-    };
-
-    let language = 'en';
-    let history = [];
-    let busy = false;
-
-    function scrollToLatest() {
-        log.scrollTop = log.scrollHeight;
+    if (!validConversation) {
+        return res.status(400).json({ error: 'Invalid conversation.' });
     }
 
-    function addMessage(text, fromVisitor = false) {
-        const bubble = document.createElement('p');
-        if (fromVisitor) bubble.className = 'support-visitor';
-        bubble.lang = language;
-        bubble.textContent = text;
-        log.append(bubble);
-        scrollToLatest();
-        return bubble;
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+    const token = process.env.CLOUDFLARE_AI_TOKEN?.trim();
+
+    if (!accountId || !token) {
+        console.error('Aryu Magga chat: Cloudflare credentials are missing.');
+        return res.status(503).json({ error: 'AI chat is unavailable.' });
     }
 
-    function addAiNotice() {
-        const notice = document.createElement('div');
-        notice.className = 'support-ai-notice';
+    const endpoint =
+        `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
+    const replyLanguage = language === 'my' ? 'Burmese' : 'English';
 
-        for (const locale of ['en', 'my']) {
-            const line = document.createElement('small');
-            line.lang = locale;
-            line.textContent = aiNotice[locale];
-            notice.append(line);
+    try {
+        const upstream = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            signal: AbortSignal.timeout(11000),
+            body: JSON.stringify({
+                model: MODEL,
+                max_tokens: 400,
+                temperature: 0.3,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `${INSTRUCTIONS}\nReply in ${replyLanguage}.`
+                    },
+                    ...messages.map(({ role, text }) => ({
+                        role: role === 'model' ? 'assistant' : 'user',
+                        content: text
+                    }))
+                ]
+            })
+        });
 
-            if (locale === 'en') notice.append(document.createElement('br'));
+        if (!upstream.ok) {
+            console.error(`Aryu Magga chat: Cloudflare returned HTTP ${upstream.status}.`);
+            return res.status(503).json({ error: 'AI chat is unavailable.' });
         }
 
-        log.append(notice);
-        scrollToLatest();
-    }
+        const result = await upstream.json();
+        const content = result.choices?.[0]?.message?.content;
 
-    function showFallback(message) {
-        const plain = message.replace(/[\s\p{P}\p{S}]+$/u, '');
-
-        if (/^(?:hi|hey|hello|english|good morning|good afternoon|good evening|မင်္ဂလာပါ(?:ရှင့်)?|မြန်မာလို မေးရန်)$/iu.test(plain)) {
-            addMessage(language === 'my'
-                ? 'မင်္ဂလာပါရှင့်။ Aryu Magga မှ ကြိုဆိုပါတယ်။ ဘာကူညီပေးရမလဲရှင့်။'
-                : 'Hello! Welcome to Aryu Magga. How can I help you today?');
-            return;
+        if (typeof content !== 'string' || !content.trim()) {
+            console.error('Aryu Magga chat: Cloudflare returned no reply text.');
+            return res.status(502).json({ error: 'No AI reply was generated.' });
         }
 
-        if (/^(?:thanks|thank you(?: so much)?|ကျေးဇူးတင်ပါတယ်(?:ရှင့်)?)$/iu.test(plain)) {
-            addMessage(language === 'my'
-                ? 'ရပါတယ်ရှင့်။ ထပ်မေးချင်တာရှိရင် မေးလို့ရပါတယ်။'
-                : 'You’re welcome! I’m happy to help if you have another question.');
-            return;
-        }
+        // Keep the company name consistent if the model uses a Burmese pronoun.
+        const reply = content.trim().replace(
+            /(?:ကျွန်မတို့|ကျွန်တော်တို့)(?:\s*အဖွဲ့)?/gu,
+            language === 'my' ? 'Aryu Magga အဖွဲ့' : 'the Aryu Magga team'
+        );
 
-        if (/\b(?:contact|whatsapp|facebook|phone number|reach you)\b|ဆက်သွယ်|ဖုန်းနံပါတ်/iu.test(message)) {
-            addMessage(contactText[language]);
-            return;
-        }
-
-        const topic = fallbackTopics.find(({ match }) => match.test(message));
-        addMessage(topic?.[language] ?? contactText[language]);
+        return res.status(200).json({ reply: reply.slice(0, 1500) });
+    } catch (error) {
+        const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+        console.error(timedOut
+            ? 'Aryu Magga chat: Cloudflare request timed out.'
+            : 'Aryu Magga chat: Cloudflare request failed.');
+        return res.status(503).json({ error: 'AI chat is unavailable.' });
     }
-
-    function setBusy(value) {
-        busy = value;
-        sendButton.disabled = value;
-        for (const button of topicButtons) button.disabled = value;
-    }
-
-    async function sendMessage(value) {
-        const message = value.trim().slice(0, 500);
-        if (!message || busy) return;
-
-        if (/\p{Script=Myanmar}/u.test(message)) language = 'my';
-        else if (/\p{Script=Latin}/u.test(message)) language = 'en';
-
-        addMessage(message, true);
-
-        const emergency = emergencyPattern.test(message);
-        if (emergency) addMessage(emergencyText[language]);
-
-        if (!aiEnabled?.checked || privateDetailsPattern.test(message)) {
-            if (!emergency) showFallback(message);
-            return;
-        }
-
-        setBusy(true);
-
-        const pending = addMessage(language === 'my'
-            ? 'ဖြေကြားနေပါတယ်…'
-            : 'Preparing an AI reply…');
-
-        const requestHistory = history;
-        const messages = [...requestHistory, { role: 'user', text: message }];
-
-        try {
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: AbortSignal.timeout(15000),
-                body: JSON.stringify({ messages, language })
-            });
-
-            if (!response.ok) throw new Error('AI endpoint unavailable');
-
-            const { reply } = await response.json();
-
-            if (!aiEnabled.checked || history !== requestHistory) {
-                if (!emergency) showFallback(message);
-                return;
-            }
-
-            if (typeof reply !== 'string' || !reply.trim()) {
-                throw new Error('Empty AI reply');
-            }
-
-            pending.remove();
-            const answer = reply.trim().slice(0, 1500);
-            addMessage(answer);
-            addAiNotice();
-
-            history = [...messages, { role: 'model', text: answer }].slice(-6);
-        } catch {
-            pending.remove();
-
-            if (!emergency) {
-                addMessage(language === 'my'
-                    ? 'AI အဖြေကို လောလောဆယ် မရနိုင်သေးပါ။'
-                    : 'The AI reply is temporarily unavailable.');
-                showFallback(message);
-            }
-        } finally {
-            pending.remove();
-            setBusy(false);
-            scrollToLatest();
-        }
-    }
-
-    aiEnabled?.addEventListener('change', () => {
-        history = [];
-    });
-
-    form.addEventListener('submit', (event) => {
-        event.preventDefault();
-
-        const message = input.value.trim();
-        if (!message || busy) return;
-
-        input.value = '';
-        input.focus();
-        void sendMessage(message);
-    });
-
-    topics?.addEventListener('click', (event) => {
-        const button = event.target.closest('button');
-        if (button) void sendMessage(button.textContent);
-    });
-
-    function closeChat() {
-        chat.open = false;
-        launcher?.focus();
-    }
-
-    if (closeButton) {
-        closeButton.hidden = false;
-        closeButton.addEventListener('click', closeChat);
-    }
-
-    chat.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && chat.open) closeChat();
-    });
-
-    if (aiOption) aiOption.hidden = false;
-    if (topics) topics.hidden = false;
-    if (contacts) contacts.hidden = false;
-    form.hidden = false;
 }
